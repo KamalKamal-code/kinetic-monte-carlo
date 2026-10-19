@@ -6,11 +6,11 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.19.1
+#       jupytext_version: 1.19.6
 #   kernelspec:
-#     display_name: Python 3 (ipykernel)
+#     display_name: CHME5137
 #     language: python
-#     name: python3
+#     name: chme5137
 # ---
 
 # %% [markdown]
@@ -108,6 +108,7 @@ plt.ylabel("population")
 plt.legend()
 plt.show()
 
+
 # %% [markdown]
 # ## 1. One trajectory
 #
@@ -119,7 +120,20 @@ plt.show()
 # happens, and how many minutes pass?
 
 # %% [markdown]
-# *Answer:*
+# Ok so the initial condition is 400 Rabbits and 200 Foxes at t = 0
+#
+# k is the state i.e. number of rabbits and foxes
+# Rki is the cumulative sum of rates so Rk1 = r1, Rk2 = r1+r2 and so on
+#
+# 1. There are 4 possible events +1R (r1 = 6) -1R (r2 = 3.2) +1F (r3 = 32) -1F (r4 = 8)
+#
+# 2. Put them all in order on a number line so that there are 4 segments where each segment corresponds to r1 - r4 respectively: 0-6, 6-9.2, 9.2-41.2, 41.2-49.2
+#
+# 3. Qk (sum of all 4 rates) * some random number u (0.5 here) will give us a number and depending on which segment the number falls in it'll be that specific event so 49.2 * 0.5 = 24.6 so event 3 where it's +1F
+#
+# 4. The time where the event occurs is determined by, Delta t = 1/Qk * ln(1/u') (u' = 0.3 here) so delta t = 0.0245 days (35 mins).
+#
+# 5. At t = 0.0245 there are 400 Rabbits and 201 Foxes. You would then recalculate r1,r2,r3, and r4 using the new animal numbers -> recalculate Qk, the segments, pick new uniform random numbers and repeat until Qk = 0 (nothing can happen anymore)
 
 # %% [markdown]
 # **(b) The function.** Write
@@ -139,9 +153,88 @@ plt.show()
 # with different seeds. How does a KMC trajectory differ from the ODE solution?
 
 # %%
+def kmc(R0, F0, t_end, rng):
+    t, R, F = 0.0, R0, F0
+    times, rabbits, foxes = [t], [R], [F]
+
+    while t < t_end:
+        # Step 1: the four rates, from the current R and F
+        rates = np.array([k1*R,k2*R*F,k3*R*F,k4*F])           # k1*R, k2*R*F, ...
+
+        # Step 2: cumulative rates (segment boundaries) and total
+        cumulative = np.cumsum(rates)     # [R_k1, R_k2, R_k3, R_k4]
+        Q = cumulative[-1]
+        if Q == 0:
+            break                         # nothing can happen any more
+
+        # Step 3: pick the event
+        u = 1 - rng.random()                           # uniform random number in (0, 1]
+        i = np.searchsorted(cumulative, u * Q)     # which segment u*Q falls in (0, 1, 2 or 3)
+
+        # Step 5: apply the event
+        if i == 0:
+            R += 1
+        elif i == 1:
+            R -= 1
+        elif i == 2:
+            F += 1
+        elif i == 3:
+            F -= 1
+        else:
+            raise ValueError(f"unknown event {i}")
+        if R < 0 or F < 0:
+            raise ValueError(f"negative population at t={t}: R={R}, F={F}")
+
+        # Step 4: advance the clock
+        u_prime = 1 - rng.random()                     # second, independent random number
+        t += np.log(1 / u_prime) / Q               # Delta t = ln(1/u') / Q
+
+        times.append(t); rabbits.append(R); foxes.append(F)
+
+    return np.array(times), np.array(rabbits), np.array(foxes)
+
+
+# %%
+rng = np.random.default_rng(42)
+start = time.time()
+times, rabbits, foxes = kmc(R0, F0, t_end, rng)
+print(len(times) - 1, "events in", time.time() - start, "seconds")
+
+print("final time:", times[-1], " final R:", rabbits[-1], " final F:", foxes[-1])
+
+plt.plot(t_ode, R_ode, "k--", lw=1, label="rabbits (ODE)")
+plt.plot(t_ode, F_ode, "k:", lw=1, label="foxes (ODE)")
+plt.step(times, rabbits, where="post", label="rabbits (KMC)")
+plt.step(times, foxes, where="post", label="foxes (KMC)")
+plt.xlabel("time (days)")
+plt.ylabel("population")
+plt.legend()
+plt.show()
+
+# %%
+for seed in [1, 2, 3, 4, 5]:
+    rng = np.random.default_rng(seed)
+    times, rabbits, foxes = kmc(R0, F0, t_end, rng)
+    if foxes[-1] == 0:
+        extinct = times[np.argmax(foxes == 0)]
+        print(f"seed {seed}: {len(times)-1} events, foxes extinct at day {extinct:.0f}")
+    else:
+        print(f"seed {seed}: {len(times)-1} events, foxes survived (F = {foxes[-1]})")
+
+    plt.plot(t_ode, R_ode, "k--", lw=1, label="rabbits (ODE)")
+    plt.plot(t_ode, F_ode, "k:", lw=1, label="foxes (ODE)")
+    plt.step(times, rabbits, where="post", label="rabbits (KMC)")
+    plt.step(times, foxes, where="post", label="foxes (KMC)")
+    plt.title(f"seed {seed}")
+    plt.xlabel("time (days)")
+    plt.ylabel("population")
+    plt.legend()
+    plt.show()
 
 # %% [markdown]
-# *Answer:*
+# *Answer:* 14,996 events in 0.32 seconds for seed 42
+#
+# KMC is similar to ODE for large populations until it drops. ODE can recover and continue breeding from a fractional number number whereas in KMC foxes can go extinct and the rabbits grow exponentially with nothing eating them
 
 # %% [markdown]
 # ## 2. Many trajectories, and where they end up
@@ -156,9 +249,35 @@ plt.show()
 #   task 5 of the `solve_ivp` homework is relevant.)
 
 # %%
+rng = np.random.default_rng(2026)
+
+for run in range(20):
+    times, rabbits, foxes = kmc(R0, F0, t_end, rng)
+    plt.step(times, foxes, where="post", lw=0.5)
+
+plt.plot(t_ode, F_ode, "k", lw=2, label="foxes (ODE)")
+plt.xlabel("time (days)")
+plt.ylabel("foxes")
+plt.legend()
+plt.show()
+
 
 # %% [markdown]
 # *Answer:*
+# What do the trajectories have in common, and where do they spread apart?
+#
+# They all have an initial peak between 0 - 100 days between 2500 and 3200 then all fall together. Some of the KMC graphs go to 0 and others form a 2nd peak later on. The second set of peaks are much more scattered and less uniform than the first set of peaks. All second peak KMC graphs are lower than the ODE and most are earlier.
+#
+# What happens to a trajectory once the foxes reach zero? Once the rabbits reach zero? Why can't it ever recover?
+#
+# the event where a Fox is born and so +1F is based on some rate constant times F and R, if F or R is 0 there will never be another fox born. if F is 0 then no rabbits can be eaten and number of rabbits will never decrease leading to exponential growth, if R is 0 then rabbits can never be born
+#
+# Where in the cycle do the foxes usually die out, and why there? (Your answer to task 5 of the solve_ivp homework is relevant.)
+#
+# Between 200-300. When R<100 a fox is more likely to die than breed.
+#
+#
+#
 
 # %% [markdown]
 # ## 3. The second fox peak
@@ -181,9 +300,93 @@ plt.show()
 # call "the second peak", if you can.
 
 # %%
+def second_peak(times, foxes):
+    window = (times >= 200) & (times <= 600)
+    t_win = times[window]
+    f_win = foxes[window]
+    if len(f_win) == 0:
+        return None
+
+    j = np.argmax(f_win)
+    t_peak = t_win[j]
+    height = f_win[j]
+
+    if height <= 100 or t_peak < 205 or t_peak > 595:
+        return None
+    return t_peak, height
+
+print(second_peak(t_ode, F_ode))
+
+for seed in [42, 1]:
+    rng = np.random.default_rng(seed)
+    times, rabbits, foxes = kmc(R0, F0, t_end, rng)
+    print(seed, second_peak(times, foxes))
+
+# %%
+rng = np.random.default_rng(2026)
+n_runs = 100
+peak_times, peak_heights = [], []
+
+start = time.time()
+for run in range(n_runs):
+    times, rabbits, foxes = kmc(R0, F0, t_end, rng)
+    peak = second_peak(times, foxes)
+    if peak is not None:
+        peak_times.append(peak[0])
+        peak_heights.append(peak[1])
+
+peak_times = np.array(peak_times)
+peak_heights = np.array(peak_heights)
+print(f"{len(peak_times)} of {n_runs} runs have a second peak")
+print(f"took {time.time() - start:.1f} seconds")
+
+# %%
+print("time:   mean", np.mean(peak_times), " median", np.median(peak_times),
+      " IQR", np.percentile(peak_times, 25), "to", np.percentile(peak_times, 75))
+print("height: mean", np.mean(peak_heights), " median", np.median(peak_heights),
+      " IQR", np.percentile(peak_heights, 25), "to", np.percentile(peak_heights, 75))
+
+# %%
+plt.hist(peak_times, bins=20)
+plt.axvline(427.8, color="k", label="ODE")
+plt.xlabel("second peak time (days)")
+plt.ylabel("number of runs")
+plt.legend()
+plt.show()
+
+plt.hist(peak_heights, bins=20)
+plt.axvline(2804, color="k", label="ODE")
+plt.xlabel("second peak height (foxes)")
+plt.ylabel("number of runs")
+plt.legend()
+plt.show()
+
+# %%
+rng = np.random.default_rng(2026)
+for run in range(100):
+    times, rabbits, foxes = kmc(R0, F0, t_end, rng)
+    peak = second_peak(times, foxes)
+    if peak is None:
+        window = (times >= 200) & (times <= 600)
+        if window.any() and foxes[window].max() > 100:
+            print(run, "rejected: max", foxes[window].max(), "at day", times[window][np.argmax(foxes[window])])
+    elif peak[0] < 250 or peak[0] > 550:
+        print(run, "suspicious peak:", peak)
+
 
 # %% [markdown]
 # *Answer:*
+#
+# 30/100 runs had a second peak, 70 other runs foxes died in the trough. 
+#
+# time:   mean 392  median 387  IQR 372 to 408
+# height: mean 2182.8  median 2188.0  IQR 1827.0 to 2523.75
+#
+# ODe's 2nd peak is later and higher than most KMC peaks. Above 75th percentile for time and height.
+#
+# The runs that have a 2nd peak kept more foxes than the ODE (1.6). Starting from more means they grow sooner, foxes start eating rabbits sooner rabbits dont recover as far as in the ODE so peak is lower, they peak earlier and grow sooner.
+#
+# a second peak after 595 days would be rejected so the bias is towards early peaks. A slowly falling first peak could have more than 100 foxes at day 205 and would be counted as a second peak. A second peak below 100 foxes isnt counted. The 100 run check didn't find any of these cases since all 2nd peaks were between 345 and 460
 
 # %% [markdown]
 # ## 4. How many runs are enough?
@@ -200,9 +403,53 @@ plt.show()
 #   ranges, to a precision you can justify. Say how you justified it.
 
 # %%
+def run_many(n_runs, rng):
+    peak_times, peak_heights, extinction_times = [], [], []
+    for run in range(n_runs):
+        times, rabbits, foxes = kmc(R0, F0, t_end, rng)
+        peak = second_peak(times, foxes)
+        if peak is not None:
+            peak_times.append(peak[0])
+            peak_heights.append(peak[1])
+        if foxes[-1] == 0:
+            extinction_times.append(times[np.argmax(foxes == 0)])
+    return np.array(peak_times), np.array(peak_heights), np.array(extinction_times)
+
+
+# %%
+rng = np.random.default_rng(2027)
+results = {}
+for n in [100, 300, 1000, 3000]:
+    start = time.time()
+    results[n] = run_many(n, rng)
+    print(f"{n} runs: {time.time() - start:.0f} s, {len(results[n][0])} with a second peak")
+
+# %%
+for n in [100, 300, 1000, 3000]:
+    pt, ph, ext = results[n]
+    m = len(pt)
+    se_t = np.std(pt, ddof=1) / np.sqrt(m)
+    se_h = np.std(ph, ddof=1) / np.sqrt(m)
+    print(f"N={n:5d}  peaks={m:4d}  "
+          f"time {np.mean(pt):6.1f} ± {se_t:4.1f}   height {np.mean(ph):7.1f} ± {se_h:5.1f}")
+
+# %%
+pt, ph, ext = results[3000]
+print("IQR time:", np.percentile(pt, [25, 75]), " IQR height:", np.percentile(ph, [25, 75]))
 
 # %% [markdown]
 # *Answer:*
+#
+# Task 3 ran for 39.6 s so I'd assume 30 times longer for the 3000 run. The actual times were 41 s, 122 s, 402 s and 1,174 s. for each run respectively
+#
+# The mean second peak time was 400.5, 403.0, 401.0 and 399.6 days, and the mean height 2,353, 2,453, 2,343 and 2,336 foxes, for N = 100, 300, 1,000 and 3,000. The changes are within a couple of standard errors, so they’re random noise that gets smaller with more runs. About 31 to 33% of runs had a second peak at every N.
+#
+# The standard error of the mean time fell from 6.4 to 1.0 days, and of the height from 101 to 19 foxes, as the number of peaks went from 31 to 934. That’s about 30 times more data, and sqrt of 30 ~ 5.5. To halve the uncertainty, you need four times as many runs. The errors shrank by about 6.4 and 5.3, close to 5.5, so the standard error scales as 1 / sqrt (n).
+#
+# From 3,000 runs (934 with a second peak): time 400 +- 1 days, IQR 379 to 418 days; height 2,340 +- 20 foxes, IQR 1,910 to 2,650 foxes.
+#
+# I rounded each mean so its last digit matches its standard error, because digits smaller than the uncertainty aren’t meaningful. The IQRs are much wider than the standard errors because they describe how much individual runs differ, which doesn’t shrink with more runs.
+#
 
 # %% [markdown]
 # ## 5. How likely is it that the foxes die out?
@@ -218,9 +465,27 @@ plt.show()
 #   happen?
 
 # %%
+pt, ph, ext = results[3000]
+N = 3000
+p = len(ext) / N
+se_p = np.sqrt(p * (1 - p) / N)
+print(f"foxes extinct by day 600 in {len(ext)} of {N} runs: p = {p:.3f} ± {se_p:.3f}")
+
+# %%
+for target in [0.01, 0.001]:
+    N_needed = p * (1 - p) / target**2
+    print(f"for ±{target*100:.1f} percentage points: about {N_needed:,.0f} runs "
+          f"({N_needed * 0.396 / 3600:.1f} hours at 0.396 s per run)")
+
+# %%
+plt.hist(ext, bins=40)
+plt.xlabel("day the foxes died out")
+plt.ylabel("number of runs")
+plt.show()
 
 # %% [markdown]
-# *Answer:*
+# *Answer:* 
+#
 
 # %% [markdown]
 # ## 6. Your project
@@ -234,6 +499,8 @@ plt.show()
 
 # %% [markdown]
 # *Answer:*
+#
+# My project would be on modeling the dissolution and absorption of drug from buccal films. I think a continuum model (Fick’s-law diffusion through the film and mucosa, and ODEs for absorption) should be good enough for the drug concentration, even a low dose film contains around 10^16 or more drug molecules, so random fluctuations are about one part in 10^8 so randomness is negligible. I suppose swallowing is a discrete, random event, removing saliva and dissolved drug in chunks roughly every minute rather than as a smooth outflow, which could matter when deciding how much drug is absorbed through the cheek versus swallowed. In a KMC model, the event would be a swallow, happening at a rate of about once per minute, and each swallow would remove the drug dissolved in the saliva at that moment
 
 # %% [markdown]
 # ## Stretch problems
