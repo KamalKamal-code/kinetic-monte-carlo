@@ -467,9 +467,11 @@ print("IQR time:", np.percentile(pt, [25, 75]), " IQR height:", np.percentile(ph
 # %%
 pt, ph, ext = results[3000]
 N = 3000
-p = len(ext) / N
+ext600 = ext[ext <= t_end]
+p = len(ext600) / N
 se_p = np.sqrt(p * (1 - p) / N)
-print(f"foxes extinct by day 600 in {len(ext)} of {N} runs: p = {p:.3f} ± {se_p:.3f}")
+print(f"foxes extinct by day 600 in {len(ext600)} of {N} runs: p = {p:.3f} ± {se_p:.3f}")
+print(f"{len(ext) - len(ext600)} more runs lost their last fox in the final step, after day 600")
 
 # %%
 for target in [0.01, 0.001]:
@@ -484,7 +486,16 @@ plt.ylabel("number of runs")
 plt.show()
 
 # %% [markdown]
-# *Answer:* 
+# *Answer:*
+#
+# Out of 3,000 runs, 2,111 had no foxes left at day 600, so p = 0.704 ± 0.008, about 70 +- 1%. The first count (2,120) included 9 runs where the last fox died in the final step, after day 600, counting only extinctions by day 600 changed p from 0.707 to 0.704, less than one standard error. This fits task 4, where about 31% of runs had a second peak.
+#
+# For +-1 percentage point I’d need about 2,100 runs, which my 3,000 already exceeds. For +-0.1 percentage point I’d need about 209,000 runs, about 23 hours at 0.4 s per run. 100 times more runs for 10 times more precision, because the standard error scales as 1 / sqrt (N), so it would only be practical as a batch job on Explorer or with faster code. For a 95% confidence interval, both numbers would be 4 times larger.
+#
+# Most extinctions happen between days 200 and 420, peaking around day 250 to 280, in the first trough. There, the foxes are down to one or two and the rabbits are below 100, so each fox is more likely to die than to breed. A second, smaller group near day 560 - 600 is runs that survived the first trough, made a second peak, and are dying out in the second trough. There are no extinctions between about 420 and 560, because during the second peak there are hundreds or thousands of foxes.
+#
+#
+#
 #
 
 # %% [markdown]
